@@ -66,10 +66,10 @@ end
 
 function parsePageHeader(header)
 	if not header:match("[\n\r]") then
-		header = assert(loadstring("return " .. header))()
-		assert(type(header) == "table", "Page header must be a lua table.")
+		local define = assert(loadstring("return " .. header))()
+		assert(type(define) == "table", "Page header must be a lua table.")
 
-		for k, v in pairs(header) do
+		for k, v in pairs(define) do
 			if type(k) == "string" then
 				k = k:lower()
 				if k == "namespace" then
