@@ -20,7 +20,7 @@ __Unique__() class "LuaLoader" (function(_ENV)
 			f:close()
 
 			-- For simple, the file name must == the class name
-			ct = ct .. ("\n return " .. name)
+			ct = ct .. ("\nreturn " .. name)
 
 			return assert(loadstring(ct))()
 		end

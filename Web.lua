@@ -29,7 +29,7 @@ interface "IPage" {
 }
 
 interface "IFileLoader" {
-	LoadFile = function(self, path, cls) end,
+	LoadFile = function(self, path, target) end,
 }
 
 --=============================
@@ -39,18 +39,42 @@ __AttributeUsage__{AttributeTarget = AttributeTargets.Class, Inherited = false, 
 class "__FileLoader__" (function(_ENV)
 	inherit "__Attribute__"
 
+	_LuaLoader = nil
 	_SuffixFileMap = {}
+	_LoadedPathMap = {}
+
+	__Static__() function LoadVirtualFiles(path)
+
+	end
+
+	__Static__() function LoadPhysicalFiles(path)
+		local target = _LoadedPathMap[path]
+
+		if target == nil then
+			if _LuaLoader then
+				target = _LuaLoader():LoadFile(path .. ".lua")
+			end
+
+			for suffix, loader in pairs(_SuffixFileMap) do
+				target = loader():LoadFile(path .. "." .. suffix)
+			end
+
+			_LoadedPathMap[path] = target-- or false
+		end
+
+		return target
+	end
 
 	property "Suffix" { Type = String }
-
-	__Static__() function GetFileLoader(suffix)
-		return _SuffixFileMap[type(suffix) == "string" and suffix:lower()]
-	end
 
 	function ApplyAttribute(self, target)
 		local suffix = self.Suffix and self.Suffix:lower()
 		if suffix then
-			_SuffixFileMap[suffix] = target
+			if suffix == "lua" then
+				_LuaLoader = target
+			else
+				_SuffixFileMap[suffix] = target
+			end
 			class (target) { IFileLoader }
 		end
 	end

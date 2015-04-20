@@ -31,7 +31,7 @@ class "FileWriter" (function(_ENV)
 
 	-- Method
 	function Write(self, text)
-		self.File:write(text)
+		if text ~= nil then self.File:write(text) end
 	end
 
 	function Flush(self)
@@ -45,7 +45,6 @@ class "FileWriter" (function(_ENV)
 	-- Constructor
 	__Arguments__{ Userdata + String, FileWriteMode + nil }
 	function FileWriter(self, file, mode)
-		print("Open", file, "with", mode)
 		if type(file) == "userdata" and tostring(file):match("^file") then
 			self.File = file
 		elseif type(file) == "string" then
