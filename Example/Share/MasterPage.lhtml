@@ -1,0 +1,27 @@
+@{ namespace = "MyWeb" }
+
+@{
+	x = math.max(22, 33)
+	y = 123
+}
+
+@div(text){
+	<div value = "@text"/>
+}
+
+@plus(a, b){
+	@(a + b)
+}
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>@{title My web site}</title>
+		@{jspart}
+	</head>
+	<body>
+		<p>x + y = @{plus(x, y)}</p>
+		@{body("Hello world")}
+		@{div("test")}
+	</body>
+</html>

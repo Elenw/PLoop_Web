@@ -11,6 +11,19 @@ _ENV = Module "System.Web" "1.0.0"
 import "System"
 namespace "System.Web"
 
+Log = Logger("System_Web_Logger")
+
+Log.TimeFormat = "%X"
+Trace = Log:SetPrefix(1, "[System.Web][Trace]", true)
+Debug = Log:SetPrefix(2, "[System.Web][Debug]", true)
+Info = Log:SetPrefix(3, "[System.Web][Info]", true)
+Warn = Log:SetPrefix(4, "[System.Web][Warn]", true)
+Error = Log:SetPrefix(5, "[System.Web][Error]", true)
+Fatal = Log:SetPrefix(6, "[System.Web][Fatal]", true)
+Log.LogLevel = 2
+
+Log:AddHandler(print)
+
 --=============================
 -- Interface
 --=============================

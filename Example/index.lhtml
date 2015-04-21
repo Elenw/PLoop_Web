@@ -1,0 +1,33 @@
+@{ inherit="Share/MasterPage" }
+
+@{
+	x = math.max(22, 33)
+	y = 123
+}
+
+@title{
+	@self.PageTitle
+}
+
+@jspart{
+	<script type="text/javascript" src="_static/jquery.js"></script>
+}
+
+@list(data) {
+	<ul>
+		@for _, v in ipairs(data) do
+		<li>@ (v.Name .. "(" .. v.Age .. ")")</li>
+		@end
+	</ul>
+}
+
+@body(word){
+	<h1>@word</h1>
+	<p>
+		@{Description Need a description}
+	</p>
+	<p>@x</p>
+	<div>
+		@{ list(self.Data) }
+	</div>
+}

@@ -10,8 +10,27 @@ import "System"
 
 fopen = io.open
 tinsert = table.insert
+tconcat = table.concat
 
 _PageSpaceMap = {}
+
+_KeyWordMap = {
+	["break"] = true,
+	["do"] = true,
+	["else"] = true,
+	["for"] = true,
+	["if"] = true,
+	["elseif"] = true,
+	["return"] = true,
+	["then"] = true,
+	["repeat"] = true,
+	["while"] = true,
+	["until"] = true,
+	["end"] = true,
+	["function"] = true,
+	["local"] = true,
+	["in"] = true,
+}
 
 local lhtmlLoader = nil
 
@@ -27,39 +46,88 @@ function parseLine(line)
 	return ([[]=] %s writer:Write[=[]]):format(line)
 end
 
+function parseLineWithKeyWord(keyword, line)
+	if _KeyWordMap[keyword] then
+		return ([[]=] %s%s writer:Write[=[]]):format(keyword, line)
+	end
+end
+
 function parseWebPart(ret, space, name, option)
+	if ret == "@" then
+		if space and #space > 0 then
+			ret = ""
+		else
+			return
+		end
+	end
 	if option == "" then option = nil end
 	if option and option:match("^:") then option = option:sub(2, -1) end
 	local temp = option or ("%s@{%s}"):format(space, name)
 	lhtmlLoader.Definition["Render_" .. name] = function(self, writer) writer:Write( temp ) end
-	if #ret > 0 then
-		lhtmlLoader.TabMap[name] = space
-		return ([[%s]=] self:Render_%s(writer) writer:Write[=[]]):format(ret, name)
-	else
-		return ([[%s%s]=] self:Render_%s(writer) writer:Write[=[]]):format(ret, space, name)
-	end
+
+	if #ret > 0 then lhtmlLoader.TabMap[name] = space end
+	return ([[%s%s]=] self:Render_%s(writer) writer:Write[=[]]):format(ret, space, name)
 end
 
-function generateRender(template, part)
-	local space = part and lhtmlLoader.TabMap[part]
-	if space then template = space .. template:gsub("[\n\r]", "%1" .. space) end
+function parseHtmlHelper(ret, space, name, param)
+	if ret == "@" then
+		if space and #space > 0 then
+			ret = ""
+		else
+			return
+		end
+	end
+	param = param:sub(2, -2):gsub("^%s+", ""):gsub("%s+$", "")
+	if param == "" then param = nil end
 
-	template = ("function %s(self, writer) writer:Write[=[%s]=] end"):format(part and "Render_" .. part or "Render", template)
+	return ([[%s%s]=] self:Render_%s(writer, %s%q%s) writer:Write[=[]]):format(
+		ret, space,	name,
+		#ret > 0 and lhtmlLoader.InHtmlHelper and "space .. " or "",
+		#ret > 0 and space or "",
+		param and ", " .. param or "")
+end
+
+function parseSpaceForLine(data)
+	return "[=[" .. data:gsub("[\n\r]+%s*", "%0]=] writer:Write(space) writer:Write[=[") .. "]=]"
+end
+
+function generateRender(template, part, param)
+	local space = part and lhtmlLoader.TabMap[part]
+	if space then template = template:gsub("[\n\r]", "%1" .. space) end
+	local args = param and param:gsub("^%s+", ""):gsub("%s+$", "")
+	if args == "" then args = nil end
+
+	if param then
+		template = ("function %s(self, writer, space%s) writer:Write[=[%s]=] end"):format(part and "Render_" .. part or "Render", args and ", " .. args or "", template)
+	else
+		template = ("function %s(self, writer) writer:Write[=[%s]=] end"):format(part and "Render_" .. part or "Render", template)
+	end
 
 	-- Parse lua code
 	template = template:gsub("[\n\r]%s*@>([^\n\r]+)", parseLine)
+	template = template:gsub("[\n\r]%s*@%s*(%w+)([^\n\r]*)", parseLineWithKeyWord)
 
 	-- Parse print code
-	template = template:gsub("(.?)@%s*([%w_%.]*%b\(\))", parsePrint)
-	template = template:gsub("(.?)@%s*([%w_%.]+)", parsePrint)
+	template = template:gsub("(.?)@%s*([%w_%.:]*%b\(\))", parsePrint)
+	template = template:gsub("(.?)@%s*([%w_%.:]+)", parsePrint)
+
+	-- Parse html helper
+	lhtmlLoader.InHtmlHelper = param and true or false
+	template = template:gsub("([\n\r@]?)(%s*)@%s*{%s*([_%w]+)%s*(%b\(\))%s*}", parseHtmlHelper)
+	lhtmlLoader.InHtmlHelper = nil
 
 	-- Parse web part
-	template = template:gsub("([\n\r]?)(%s*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
+	template = template:gsub("([\n\r@]?)(%s*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
 
 	-- Format code
 	template = template:gsub("@@", "@")
-	template = template:gsub("%s*writer:Write%[=%[%s*%]=%]%s*", " ")
 	template = template:gsub("writer:Write%[=%[([\n\r])", "%0%1")
+
+	-- handle the space
+	if param then
+		template = template:gsub("%[=%[(.-)%]=%]", parseSpaceForLine)
+	end
+	template = template:gsub("%s*writer:Write%[=%[%]=%]%s*", " ")
 
 	return template
 end
@@ -119,7 +187,10 @@ function parsePageHeader(header)
 end
 
 function parseLuaCode(prev, code)
-	if not prev or prev == "" or prev == "\n" or prev == "\r" then return code end
+	if not prev or prev == "" or prev == "\n" or prev == "\r" then
+		tinsert(lhtmlLoader.DefinePart, code)
+		return ""
+	end
 end
 
 function parseWebPartDefine(prev, name, code)
@@ -129,7 +200,20 @@ function parseWebPartDefine(prev, name, code)
 			code = code:gsub("^%s+", ""):gsub("([\n\r]+)"..space, "%1"):gsub("[\n\r%s]+$", "")
 		end
 
-		return generateRender(code, name)
+		tinsert(lhtmlLoader.DefinePart, generateRender(code, name))
+		return ""
+	end
+end
+
+function parseHtmlHelperDefine(prev, name, param, code)
+	if not prev or prev == "" or prev == "\n" or prev == "\r" then
+		local space = code:match("^%s+")
+		if space and #space > 0 then
+			code = code:gsub("^%s+", ""):gsub("([\n\r]+)"..space, "%1"):gsub("[\n\r%s]+$", "")
+		end
+
+		tinsert(lhtmlLoader.DefinePart, generateRender(code, name, param:sub(2, -2)))
+		return ""
 	end
 end
 
@@ -148,6 +232,9 @@ class "LHtmlLoader" (function(_ENV)
 			f:close()
 
 			self.Definition = { IPage }
+
+			-- Get line break
+			local lb = ct:match("[\n\r]")
 
 			-- Check the header
 			ct = ct:gsub("^@(%b{})", parsePageHeader):gsub("^[\n\r%s]+", ""):gsub("[\n\r%s]$", "")
@@ -169,18 +256,32 @@ class "LHtmlLoader" (function(_ENV)
 
 			self.TabMap = _PageSpaceMap[target] or {}
 
-			-- Generate the Definition Body
-			if self.SuperClass then
-				-- parse the lua code
-				ct = ct:gsub("(.?)@%s*{%s*[\n\r](.-)[\n\r]}", parseLuaCode)
-
-				-- parse web part
-				ct = ct:gsub("(.?)@%s*([_%w]+)%s*{%s*[\n\r](.-)[\n\r]}", parseWebPartDefine)
+			if superCls and Reflector.IsExtendedInterface(superCls, IPage) then
+				self.SuperClass = superCls
 			else
-				ct = generateRender(ct)
+				self.SuperClass = nil
 			end
 
+			self.DefinePart = {}
+
+			-- parse global lua code
+			ct = ct:gsub("(.?)@%s*{%s*[\n\r](.-)[\n\r]}", parseLuaCode)
+			-- parse html helper
+			ct = ct:gsub("(.?)@%s*([_%w]+)%s*(%b\(\))%s*{%s*[\n\r](.-)[\n\r]}", parseHtmlHelperDefine)
+			-- parse web part
+			ct = ct:gsub("(.?)@%s*([_%w]+)%s*{%s*[\n\r](.-)[\n\r]}", parseWebPartDefine)
+
+			-- Generate the Main Html Page
+			if not self.SuperClass then
+				tinsert(self.DefinePart, generateRender((ct:gsub("^[\n\r%s]+", ""):gsub("[\n\r%s]$", ""))))
+			end
+
+			ct = tconcat(self.DefinePart, lb)
+
 			if next(self.TabMap) then _PageSpaceMap[target] = self.TabMap end
+
+			Debug("Generate class definition for %s :", name)
+			Debug(ct)
 
 			-- Recode the target class
 			if next(self.Definition) then class (target) (self.Definition) end
