@@ -24,7 +24,7 @@
 @body(word){
 	<h1>@word</h1>
 	<p>
-		@{Description Need a description}
+		@[Description Need a description]
 	</p>
 	<p>@x</p>
 	<div>

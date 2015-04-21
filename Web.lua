@@ -78,6 +78,20 @@ class "__FileLoader__" (function(_ENV)
 		return target
 	end
 
+	__Static__() function OutputPhysicalFiles(path, writer, space, default)
+		local target = LoadPhysicalFiles(path)
+
+		if target then
+			local obj = target()
+			obj:OnLoad()
+			obj:Render(writer, space)
+			obj:Dispose()
+		else
+			writer:Write(default)
+		end
+		writer:Flush()
+	end
+
 	property "Suffix" { Type = String }
 
 	function ApplyAttribute(self, target)

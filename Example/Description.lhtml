@@ -1,5 +1,3 @@
-@{ inherit="index" }
-
-@ Description {
+<h2>
 	Finaly, a description<br/>test is test
-}
+</h2>

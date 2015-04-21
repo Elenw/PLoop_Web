@@ -3,17 +3,11 @@ require "PLoop_nginx"
 import "System"
 import "System.Web"
 
-pageCls = __FileLoader__.LoadPhysicalFiles("Description")
+local st = os.clock()
 
 f = FileWriter("output.html")
 
-local st = os.clock()
-
-page = pageCls()
-
-page:OnLoad()
-
-page:Render(f)
+pageCls = __FileLoader__.OutputPhysicalFiles("index", f, "")
 
 f:Close()
 
