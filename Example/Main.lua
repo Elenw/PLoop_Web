@@ -7,7 +7,7 @@ local st = os.clock()
 
 f = FileWriter("output.html")
 
-pageCls = __FileLoader__.OutputPhysicalFiles("index", f, "")
+__FileLoader__.OutputPhysicalFiles("index", f, "")
 
 f:Close()
 

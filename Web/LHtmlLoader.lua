@@ -149,17 +149,17 @@ function parsePageHeader(header)
 					lhtmlLoader.NameSpace = v
 				elseif k == "inherit" then
 					if Reflector.IsClass(v) then
-						lhtmlLoader.SuperClass = v
+						tinsert(lhtmlLoader.Definition, v)
 					elseif type(v) == "string" then
 						local cls = Reflector.GetNameSpaceForName(v)
 						if Reflector.IsClass(cls) then
-							lhtmlLoader.SuperClass = cls
+							tinsert(lhtmlLoader.Definition, cls)
 						else
 							local loader = lhtmlLoader
 							local cls = __FileLoader__.LoadPhysicalFiles(v)
 							lhtmlLoader = loader
 							if Reflector.IsClass(cls) then
-								lhtmlLoader.SuperClass = cls
+								tinsert(lhtmlLoader.Definition, cls)
 							else
 								error(("%s - the master page can't be found."):format(header))
 							end
@@ -167,7 +167,6 @@ function parsePageHeader(header)
 					else
 						error(("%s - inherit format error."):format(header))
 					end
-					if lhtmlLoader.SuperClass then tinsert(lhtmlLoader.Definition, lhtmlLoader.SuperClass) end
 				elseif k == "extend" then
 					if type(v) == "string" then
 						for p in v:gmatch("[%._%w]+") do
@@ -253,15 +252,6 @@ class "LHtmlLoader" (function(_ENV)
 			end
 
 			self.Definition = {}
-
-			local superCls = Reflector.GetSuperClass(target)
-
-			if superCls and Reflector.IsExtendedInterface(superCls, IPage) then
-				self.SuperClass = superCls
-			else
-				self.SuperClass = nil
-			end
-
 			self.DefinePart = {}
 
 			-- parse global lua code
@@ -272,7 +262,8 @@ class "LHtmlLoader" (function(_ENV)
 			ct = ct:gsub("(.?)@%s*([_%w]+)%s*{%s*[\n\r](.-)[\n\r]}", parseWebPartDefine)
 
 			-- Generate the Main Html Page
-			if not self.SuperClass then
+			local superCls = Reflector.GetSuperClass(target)
+			if not (superCls and Reflector.IsExtendedInterface(superCls, IPage)) then
 				tinsert(self.DefinePart, generateRender((ct:gsub("^[\n\r%s]+", ""):gsub("[\n\r%s]$", ""))))
 			end
 
