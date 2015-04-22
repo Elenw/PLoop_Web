@@ -41,6 +41,12 @@ function parsePrint(prev, printCode)
 	end
 end
 
+function parsePrintParen(prev, printCode)
+	if prev ~= "@" then
+		return ([[%s]=] writer:Write%s writer:Write[=[]]):format(prev, printCode)
+	end
+end
+
 function parseLine(line)
 	return ([[]=] %s writer:Write[=[]]):format(line)
 end
@@ -115,7 +121,7 @@ function generateRender(template, part, param)
 	template = template:gsub("[\n\r]%s*@%s*(%w+)([^\n\r]*)", parseLineWithKeyWord)
 
 	-- Parse print code
-	template = template:gsub("(.?)@%s*(%b\(\))", parsePrint)
+	template = template:gsub("(.?)@%s*(%b\(\))", parsePrintParen)
 	template = template:gsub("(.?)@%s*([%w_%.]+)", parsePrint)
 
 	-- Parse html helper
