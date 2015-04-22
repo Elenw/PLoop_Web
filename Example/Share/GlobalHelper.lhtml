@@ -1,0 +1,26 @@
+@{ namespace = "MyWeb", abstract = true }
+
+@plus(a, b){
+	@(a + b)
+}
+
+@list(data, field) {
+	<table>
+		<thead>
+			<tr>
+				@for i = 1, #field/2 do
+				<th>@(field[i*2])</th>
+				@end
+			</tr>
+		</thead>>
+		<tbody>
+			@for _, v in ipairs(data) do
+			<tr>
+				@for i = 1, #field/2 do
+				<td>@(v[field[i*2-1]])</td>
+				@end
+			</tr>
+			@end
+		</tbody>
+	<table>
+}

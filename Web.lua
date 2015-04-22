@@ -61,6 +61,7 @@ class "__FileLoader__" (function(_ENV)
 	end
 
 	__Static__() function LoadPhysicalFiles(path)
+		Debug("LoadPhysicalFiles from %s", path)
 		local target = _LoadedPathMap[path]
 
 		if target == nil then
@@ -81,7 +82,7 @@ class "__FileLoader__" (function(_ENV)
 	__Static__() function OutputPhysicalFiles(path, writer, space, default)
 		local target = LoadPhysicalFiles(path)
 
-		if target then
+		if Reflector.IsClass(target) then
 			local obj = target()
 			obj:OnLoad()
 			obj:Render(writer, space)

@@ -1,10 +1,5 @@
 @{ inherit="Share/MasterPage" }
 
-@{
-	x = math.max(22, 33)
-	y = 123
-}
-
 @title{
 	@self.PageTitle
 }
@@ -13,21 +8,12 @@
 	<script type="text/javascript" src="_static/jquery.js"></script>
 }
 
-@list(data) {
-	<ul>
-		@for _, v in ipairs(data) do
-		<li>@ (v.Name .. "(" .. v.Age .. ")")</li>
-		@end
-	</ul>
-}
-
-@body(word){
-	<h1>@word</h1>
+@body{
 	<p>
 		@[Description Need a description]
 	</p>
-	<p>@x</p>
+	<p>15 + 13 = @{plus(15, 13)}
 	<div>
-		@{ list(self.Data) }
+		@{ list(self.Data, {"Name", "姓名", "Age", "年龄"}) }
 	</div>
 }

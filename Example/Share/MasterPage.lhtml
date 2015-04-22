@@ -1,17 +1,4 @@
-@{ namespace = "MyWeb" }
-
-@{
-	x = math.max(22, 33)
-	y = 123
-}
-
-@div(text){
-	<div value = "@text"/>
-}
-
-@plus(a, b){
-	@(a + b)
-}
+@{ namespace = "MyWeb", extend="Share/GlobalHelper" }
 
 <html xmlns="http://www.w3.org/1999/xhtml">
 	<head>
@@ -20,8 +7,6 @@
 		@{jspart}
 	</head>
 	<body>
-		<p>x + y = @{plus(x, y)}</p>
-		@{body("Hello world")}
-		@{div("test")}
+		@{body}
 	</body>
 </html>

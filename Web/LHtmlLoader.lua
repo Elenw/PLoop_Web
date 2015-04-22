@@ -10,6 +10,7 @@ import "System"
 
 fopen = io.open
 tinsert = table.insert
+tremove = table.remove
 tconcat = table.concat
 
 _KeyWordMap = {
@@ -60,10 +61,10 @@ function parseWebPart(ret, space, name, option)
 	end
 	if option == "" then option = nil end
 	if option and option:match("^:") then option = option:sub(2, -1) end
-	local temp = option or ("%s@{%s}"):format(space, name)
-	lhtmlLoader.Definition["Render_" .. name] = function(self, writer) writer:Write( temp ) end
+	local temp = option or ("@{%s}"):format(name)
 
-	return ([[%s%s]=] self:Render_%s(writer, space .. %q) writer:Write[=[]]):format(ret, space, name, #ret > 0 and space or "")
+	return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, space .. %q) else writer:Write(%q) end writer:Write[=[]]):format(
+		ret, space, name, name, #ret > 0 and space or "", temp)
 end
 
 function parseEmbedPage(ret, space, name, option)
@@ -114,8 +115,8 @@ function generateRender(template, part, param)
 	template = template:gsub("[\n\r]%s*@%s*(%w+)([^\n\r]*)", parseLineWithKeyWord)
 
 	-- Parse print code
-	template = template:gsub("(.?)@%s*([%w_%.:]*%b\(\))", parsePrint)
-	template = template:gsub("(.?)@%s*([%w_%.:]+)", parsePrint)
+	template = template:gsub("(.?)@%s*(%b\(\))", parsePrint)
+	template = template:gsub("(.?)@%s*([%w_%.]+)", parsePrint)
 
 	-- Parse html helper
 	template = template:gsub("([\n\r@]?)(%s*)@%s*{%s*([_%w]+)%s*(%b\(\))%s*}", parseHtmlHelper)
@@ -148,6 +149,8 @@ function parsePageHeader(header)
 				if k == "namespace" then
 					lhtmlLoader.NameSpace = v
 				elseif k == "inherit" then
+					assert(not lhtmlLoader.Abstract, ("%s - the page is an abstract page, can't inherit other pages."):format(header))
+
 					if Reflector.IsClass(v) then
 						tinsert(lhtmlLoader.Definition, v)
 					elseif type(v) == "string" then
@@ -169,18 +172,32 @@ function parsePageHeader(header)
 					end
 				elseif k == "extend" then
 					if type(v) == "string" then
-						for p in v:gmatch("[%._%w]+") do
+						for p in v:gmatch("[^%s,]+") do
 							local itf = Reflector.GetNameSpaceForName(p)
 							if Reflector.IsInterface(itf) then
 								tinsert(lhtmlLoader.Definition, itf)
 							else
-								error(("%s - interface %s not existed."):format(header, p))
+								local loader = lhtmlLoader
+								itf = __FileLoader__.LoadPhysicalFiles(v)
+								lhtmlLoader = loader
+								if Reflector.IsInterface(itf) then
+									tinsert(lhtmlLoader.Definition, itf)
+								else
+									error(("%s - interface %s not existed."):format(header, p))
+								end
 							end
 						end
 					elseif Reflector.IsInterface(v) then
 						tinsert(lhtmlLoader.Definition, v)
 					else
 						error(("%s - extend format error."):format(header))
+					end
+				elseif k == "abstract" and v then
+					lhtmlLoader.Abstract = true
+					for i = #(lhtmlLoader.Definition), 1, -1 do
+						if Reflector.IsClass(lhtmlLoader.Definition[i]) then
+							tremove(lhtmlLoader.Definition, i)
+						end
 					end
 				end
 			end
@@ -244,14 +261,23 @@ class "LHtmlLoader" (function(_ENV)
 			ct = ct:gsub("^@(%b{})", parsePageHeader):gsub("^[\n\r%s]+", ""):gsub("[\n\r%s]$", "")
 
 			-- Create or modify the target class with page header
-			if target then
-				class(target)(self.Definition)
+			if self.Abstract or Reflector.IsInterface(target) then
+				assert(not target or Reflector.IsInterface(target), ("The %s is a class, can't mark as abstract."):format(name))
+				if target then
+					interface(target)(self.Definition)
+				else
+					__NameSpace__(self.NameSpace)
+					target = Reflector.GetDefinitionEnvironmentOwner( interface(name)(self.Definition) )
+				end
 			else
-				__NameSpace__(self.NameSpace)
-				target = Reflector.GetDefinitionEnvironmentOwner( class(name)(self.Definition) )
+				if target then
+					class(target)(self.Definition)
+				else
+					__NameSpace__(self.NameSpace)
+					target = Reflector.GetDefinitionEnvironmentOwner( class(name)(self.Definition) )
+				end
 			end
 
-			self.Definition = {}
 			self.DefinePart = {}
 
 			-- parse global lua code
@@ -262,19 +288,24 @@ class "LHtmlLoader" (function(_ENV)
 			ct = ct:gsub("(.?)@%s*([_%w]+)%s*{%s*[\n\r](.-)[\n\r]}", parseWebPartDefine)
 
 			-- Generate the Main Html Page
-			local superCls = Reflector.GetSuperClass(target)
-			if not (superCls and Reflector.IsExtendedInterface(superCls, IPage)) then
-				tinsert(self.DefinePart, generateRender((ct:gsub("^[\n\r%s]+", ""):gsub("[\n\r%s]$", ""))))
+			if Reflector.IsClass(target) then
+				local superCls = Reflector.GetSuperClass(target)
+				if not (superCls and Reflector.IsExtendedInterface(superCls, IPage)) then
+					tinsert(self.DefinePart, generateRender((ct:gsub("^[\n\r%s]+", ""):gsub("[\n\r%s]$", ""))))
+				end
 			end
 
 			ct = tconcat(self.DefinePart, lb)
 
-			Debug("Generate class definition for %s :", name)
+			Debug("Generate definition for %s :", name)
 			Debug(ct)
 
 			-- Recode the target class
-			if next(self.Definition) then class (target) (self.Definition) end
-			class (target) ( ct )
+			if Reflector.IsClass(target) then
+				class (target) ( ct )
+			else
+				interface (target) ( ct )
+			end
 
 			SetLhtmlLoader(nil)
 		end
