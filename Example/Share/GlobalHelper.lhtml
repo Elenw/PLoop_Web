@@ -30,13 +30,11 @@
 		<tbody>
 			@for _, v in ipairs(data) do
 			<tr>
-				@for i = 1, #field/2 do
-					@if i%2 == 1 then
-				<td style="background-color:cyan">@(v[field[i*2-1]])</td>
-					@else
-				<td>@(v[field[i*2-1]])</td>
-					@end
-				@end
+				@for i = 1, #field/2 do if i%2 == 1 then
+				<td style="background-color:cyan">@v[field[i*2-1]]</td>
+				@else
+				<td>@v[field[i*2-1]]</td>
+				@end end
 			</tr>
 			@end
 		</tbody>
