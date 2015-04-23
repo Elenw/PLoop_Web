@@ -23,7 +23,7 @@
 		<thead>
 			<tr>
 				@for i = 1, #field/2 do
-				<th>@(field[i*2])</th>
+				<th>@field[i*2]</th>
 				@end
 			</tr>
 		</thead>

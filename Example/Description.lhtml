@@ -1,5 +1,6 @@
 @{ unique = true, cache = true }
 
 <h2>
-	Finaly, a description<br/>test is test
+	Here is a description for index page<br/>
+	To show how to use embed web pages.
 </h2>
