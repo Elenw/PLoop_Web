@@ -3,12 +3,25 @@ require "PLoop_nginx"
 import "System"
 import "System.Web"
 
-local st = os.clock()
+tinsert = table.insert
+tconcat = table.concat
 
-f = FileWriter("output.html")
+WebSettings.SetLogLevel(WebSettings.LogLevel.Debug)
+WebSettings.AddLogHandler(print)
 
-__FileLoader__.OutputPhysicalFiles("index", f, "")
+class "CacheWriter" { IWriter,
+	Write = function(self, text) if text then tinsert(self, text) end end,
+	Close = function(self) print(tconcat(self, "")) end,
+}
 
-f:Close()
+function main(writer)
+	local st = os.clock()
 
-print("Cost", os.clock() - st)
+	__FileLoader__.OutputPhysicalFiles("index", writer)
+	writer:Close()
+
+	print("Cost", os.clock() - st)
+end
+
+main( FileWriter("output.html") )
+main( CacheWriter() )

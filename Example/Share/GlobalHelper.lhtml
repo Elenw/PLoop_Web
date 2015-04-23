@@ -1,23 +1,41 @@
 @{ namespace = "MyWeb", abstract = true }
 
-@plus(a, b){
+@{
+	local function appendSuffix(path, suffix)
+		if not path:match("%.%w+$") then
+			return path .. suffix
+		else
+			return path
+		end
+	end
+}
+
+@plus(a, b) {
 	@(a + b)
 }
 
-@list(data, field) {
-	<table>
+@javascript(src) {
+	<script type="text/javascript" src="@appendSuffix(src, '.js')"></script>
+}
+
+@table(data, field) {
+	<table border="1">
 		<thead>
 			<tr>
 				@for i = 1, #field/2 do
 				<th>@(field[i*2])</th>
 				@end
 			</tr>
-		</thead>>
+		</thead>
 		<tbody>
 			@for _, v in ipairs(data) do
 			<tr>
 				@for i = 1, #field/2 do
+					@if i%2 == 1 then
+				<td style="background-color:cyan">@(v[field[i*2-1]])</td>
+					@else
 				<td>@(v[field[i*2-1]])</td>
+					@end
 				@end
 			</tr>
 			@end

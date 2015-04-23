@@ -20,13 +20,34 @@ Info = Log:SetPrefix(3, "[System.Web][Info]", true)
 Warn = Log:SetPrefix(4, "[System.Web][Warn]", true)
 Error = Log:SetPrefix(5, "[System.Web][Error]", true)
 Fatal = Log:SetPrefix(6, "[System.Web][Fatal]", true)
-Log.LogLevel = 2
+Log.LogLevel = 3
 
-Log:AddHandler(print)
 
 --=============================
 -- Interface
 --=============================
+__Final__()
+interface "WebSettings" (function(_ENV)
+	enum "LogLevel" {
+		Trace = 1,
+		Debug = 2,
+		Info = 3,
+		Warn = 4,
+		Error = 5,
+		Fatal = 6,
+	}
+
+	__Arguments__{ LogLevel }
+	function SetLogLevel(lvl)
+		Log.LogLevel = lvl
+	end
+
+	__Arguments__{ Function, LogLevel + nil }
+	function AddLogHandler(handler, loglevel)
+		Log:AddHandler(handler, loglevel)
+	end
+end)
+
 interface "IWriter" {
 	Closed = Boolean,
 

@@ -1,19 +1,19 @@
-@{ inherit="Share/MasterPage" }
+@{ inherit="Share/MasterPage", unique = true, cache = true }
 
 @title{
 	@self.PageTitle
 }
 
 @jspart{
-	<script type="text/javascript" src="_static/jquery.js"></script>
+	@{javascript("_static/jquery")}
 }
 
 @body{
 	<p>
 		@[Description Need a description]
 	</p>
-	<p>15 + 13 = @{plus(15, 13)}
+	<p>100 + 111 = @{plus(100, 111)}</p>
 	<div>
-		@{ list(self.Data, {"Name", "姓名", "Age", "年龄"}) }
+		@{ table(self.Data, {"Name", "Person Name", "Age", "Person Age"}) }
 	</div>
 }

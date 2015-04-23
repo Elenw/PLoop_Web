@@ -35,9 +35,51 @@ local lhtmlLoader = nil
 
 function SetLhtmlLoader(loader) lhtmlLoader = loader end
 
-function parsePrint(prev, printCode)
+function parsePrintOld(prev, printCode)
 	if prev ~= "@" then
 		return ([[%s]=] writer:Write(%s) writer:Write[=[]]):format(prev, printCode)
+	end
+end
+
+function parsePrintTemp(word)
+	lhtmlLoader.ParsesPrintTempOk = true
+	tinsert(lhtmlLoader.ParsesPrintTemp, word)
+	return ""
+end
+
+function parsePrint(prev, printCode)
+	if prev ~= "@" then
+		local wordOk = true
+
+		lhtmlLoader.ParsesPrintTemp = lhtmlLoader.ParsesPrintTemp or {}
+
+		while printCode ~= "" do
+			local head = printCode:sub(1, 1)
+			lhtmlLoader.ParsesPrintTempOk = false
+
+			if head == "." or head == ":" then
+				printCode = printCode:gsub("^[%.:][%w_]+", parsePrintTemp)
+				wordOk = false
+			elseif head == "(" then
+				printCode = printCode:gsub("^%b()", parsePrintTemp)
+				wordOk = false
+			elseif head == "[" then
+				printCode = printCode:gsub("^%b[]", parsePrintTemp)
+				wordOk = false
+			elseif wordOk and head:match("[%w_]+") then
+				printCode = printCode:gsub("^[%w_]+", parsePrintTemp)
+			end
+
+			if not lhtmlLoader.ParsesPrintTempOk then
+				break
+			end
+		end
+
+		local code = tconcat(lhtmlLoader.ParsesPrintTemp, "")
+
+		lhtmlLoader.ParsesPrintTemp = nil
+
+		return ([[%s]=] writer:Write(%s) writer:Write[=[%s]]):format(prev, code, printCode)
 	end
 end
 
@@ -47,95 +89,102 @@ function parsePrintParen(prev, printCode)
 	end
 end
 
-function parseLine(line)
-	return ([[]=] %s writer:Write[=[]]):format(line)
+function parseLine(prev, space, line)
+	if prev == "@" and space == "" then return end
+	if not(prev == "" or prev == "\n" or prev == "\r") then return end
+	local generateSkip = false
+	if prev == "" and not lhtmlLoader.GenerateRenderSkipFirst then generateSkip = true lhtmlLoader.GenerateRenderSkipFirst = true end
+	return ([[]=] %s%s writer:Write[=[]]):format(
+		generateSkip and "local __skipTheFirstRet = true " or "",
+		line)
 end
 
-function parseLineWithKeyWord(keyword, line)
-	if _KeyWordMap[keyword] then
-		return ([[]=] %s%s writer:Write[=[]]):format(keyword, line)
+function parseLineWithKeyWord(prev, space, keyword, line)
+	if prev == "@" and space == "" then return end
+	if not(prev == "" or prev == "\n" or prev == "\r") then return end
+	if _KeyWordMap[keyword] ~= nil then
+		local generateSkip = false
+		if prev == "" and not lhtmlLoader.GenerateRenderSkipFirst then generateSkip = true lhtmlLoader.GenerateRenderSkipFirst = true end
+		return ([[]=] %s%s%s writer:Write[=[]]):format(
+			generateSkip and "local __skipTheFirstRet = true " or "",
+			keyword, line)
 	end
 end
 
 function parseWebPart(ret, space, name, option)
-	if ret == "@" then
-		if space and #space > 0 then
-			ret = ""
-		else
-			return
-		end
-	end
+	if ret == "@" and space == "" then return end
+	local needSpace = ret == "" or ret == "\n" or ret == "\r"
 	if option == "" then option = nil end
 	if option and option:match("^:") then option = option:sub(2, -1) end
 	local temp = option or ("@{%s}"):format(name)
 
 	return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, space .. %q) else writer:Write(%q) end writer:Write[=[]]):format(
-		ret, space, name, name, #ret > 0 and space or "", temp)
+		ret, space, name, name, needSpace and space or "", temp)
 end
 
 function parseEmbedPage(ret, space, name, option)
-	if ret == "@" then
-		if space and #space > 0 then
-			ret = ""
-		else
-			return
-		end
-	end
+	if ret == "@" and space == "" then return end
+	local needSpace = ret == "" or ret == "\n" or ret == "\r"
 	if option == "" then option = nil end
 	if option and option:match("^:") then option = option:sub(2, -1) end
 	local temp = option or ("%s@{%s}"):format(space, name)
 
-	return ([[%s%s]=] __FileLoader__.OutputPhysicalFiles(%q, writer, space .. %q, %q) writer:Write[=[]]):format(ret, space, name, #ret > 0 and space or "", temp)
+	return ([[%s%s]=] __FileLoader__.OutputPhysicalFiles(%q, writer, space .. %q, %q) writer:Write[=[]]):format(
+		ret, space, name, needSpace and space or "", temp)
 end
 
 function parseHtmlHelper(ret, space, name, param)
-	if ret == "@" then
-		if space and #space > 0 then
-			ret = ""
-		else
-			return
-		end
-	end
+	if ret == "@" and space == "" then return end
+	local needSpace = ret == "" or ret == "\n" or ret == "\r"
 	param = param:sub(2, -2):gsub("^%s+", ""):gsub("%s+$", "")
 	if param == "" then param = nil end
 
-	return ([[%s%s]=] self:Render_%s(writer, %s%q%s) writer:Write[=[]]):format(
+	return ([[%s%s]=] self:Render_%s(writer, space .. %q%s) writer:Write[=[]]):format(
 		ret, space,	name,
-		#ret > 0 and "space .. " or "",
-		#ret > 0 and space or "",
+		needSpace and space or "",
 		param and ", " .. param or "")
 end
 
+function parseSpaceForLineInner(retSpace)
+	if lhtmlLoader.GenerateRenderSkipFirst then
+		return ("]=] if not __skipTheFirstRet then writer:Write(%q) writer:Write(space) else __skipTheFirstRet = false end writer:Write[=["):format(retSpace)
+	else
+		return ("%s]=] writer:Write(space) writer:Write[=["):format(retSpace)
+	end
+end
+
 function parseSpaceForLine(data)
-	return "[=[" .. data:gsub("[\n\r]+%s*", "%0]=] writer:Write(space) writer:Write[=[") .. "]=]"
+	return "[=[" .. data:gsub("[\n\r]+%s*", parseSpaceForLineInner) .. "]=]"
 end
 
 function generateRender(template, part, param)
+	lhtmlLoader.GenerateRenderSkipFirst = false
+
 	local args = param and param:gsub("^%s+", ""):gsub("%s+$", "")
 	if args == "" then args = nil end
 
-	template = ("function %s(self, writer, space%s) space = space or \"\" writer:Write[=[%s]=] end"):format(part and "Render_" .. part or "Render", args and ", " .. args or "", template)
-
 	-- Parse lua code
-	template = template:gsub("[\n\r]%s*@>([^\n\r]+)", parseLine)
-	template = template:gsub("[\n\r]%s*@%s*(%w+)([^\n\r]*)", parseLineWithKeyWord)
+	template = template:gsub("(.?)([ 	]*)@>([^\n\r]+)", parseLine)
+	template = template:gsub("(.?)([ 	]*)@%s*(%w+)([^\n\r]*)", parseLineWithKeyWord)
 
 	-- Parse print code
-	template = template:gsub("(.?)@%s*(%b\(\))", parsePrintParen)
-	template = template:gsub("(.?)@%s*([%w_%.]+)", parsePrint)
+	template = template:gsub("(.?)@%s*(%b())", parsePrintParen)
+	template = template:gsub("(.?)@%s*([_%w]+[^\n\r]+)", parsePrint)
 
 	-- Parse html helper
-	template = template:gsub("([\n\r@]?)(%s*)@%s*{%s*([_%w]+)%s*(%b\(\))%s*}", parseHtmlHelper)
+	template = template:gsub("(.?)([ 	]*)@%s*{%s*([_%w]+)%s*(%b())%s*}", parseHtmlHelper)
 
 	-- Parse web part
-	template = template:gsub("([\n\r@]?)(%s*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
+	template = template:gsub("(.?)([ 	]*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
 
 	-- Parse embed page
-	template = template:gsub("([\n\r@]?)(%s*)@%s*%[%s*([^%s:]+)%s*(.-)%s*%]", parseEmbedPage)
+	template = template:gsub("(.?)([ 	]*)@%s*%[%s*([^%s:]+)%s*(.-)%s*%]", parseEmbedPage)
 
 	-- Format code
 	template = template:gsub("@@", "@")
 	template = template:gsub("writer:Write%[=%[([\n\r])", "%0%1")
+
+	template = ("function %s(self, writer, space%s) space = space or \"\" writer:Write[=[%s]=] end"):format(part and "Render_" .. part or "Render", args and ", " .. args or "", template)
 
 	-- handle the space
 	template = template:gsub("%[=%[(.-)%]=%]", parseSpaceForLine)
@@ -205,6 +254,10 @@ function parsePageHeader(header)
 							tremove(lhtmlLoader.Definition, i)
 						end
 					end
+				elseif k == "unique" and v then
+					lhtmlLoader.UniqueClass = true
+				elseif k == "cache" and v then
+					lhtmlLoader.CacheClass = true
 				end
 			end
 		end
@@ -276,6 +329,8 @@ class "LHtmlLoader" (function(_ENV)
 					target = Reflector.GetDefinitionEnvironmentOwner( interface(name)(self.Definition) )
 				end
 			else
+				if self.UniqueClass then __Unique__() end
+				if self.CacheClass then __Cache__() end
 				if target then
 					class(target)(self.Definition)
 				else
@@ -289,7 +344,7 @@ class "LHtmlLoader" (function(_ENV)
 			-- parse global lua code
 			ct = ct:gsub("(.?)@%s*{%s*[\n\r](.-)[\n\r]}", parseLuaCode)
 			-- parse html helper
-			ct = ct:gsub("(.?)@%s*([_%w]+)%s*(%b\(\))%s*{%s*[\n\r](.-)[\n\r]}", parseHtmlHelperDefine)
+			ct = ct:gsub("(.?)@%s*([_%w]+)%s*(%b())%s*{%s*[\n\r](.-)[\n\r]}", parseHtmlHelperDefine)
 			-- parse web part
 			ct = ct:gsub("(.?)@%s*([_%w]+)%s*{%s*[\n\r](.-)[\n\r]}", parseWebPartDefine)
 
@@ -304,7 +359,7 @@ class "LHtmlLoader" (function(_ENV)
 			ct = tconcat(self.DefinePart, lb)
 
 			Debug("Generate definition for %s :", name)
-			Debug(ct)
+			Debug("\n%s", ct)
 
 			-- Recode the target class
 			if Reflector.IsClass(target) then
