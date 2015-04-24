@@ -48,6 +48,7 @@ interface "WebSettings" (function(_ENV)
 	end
 end)
 
+__Cache__()
 interface "IWriter" {
 	Closed = Boolean,
 

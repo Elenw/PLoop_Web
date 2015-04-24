@@ -20,7 +20,6 @@ enum "FileWriteMode" {
 	AppendPlusBinary = "a+b",
 }
 
-__Cache__()
 class "FileWriter" (function(_ENV)
 	extend "IWriter"
 
