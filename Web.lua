@@ -37,6 +37,8 @@ interface "WebSettings" (function(_ENV)
 		Fatal = 6,
 	}
 
+	__Static__() property "LineBreak" { Type = String, Default = "\n" }
+
 	__Arguments__{ LogLevel }
 	function SetLogLevel(lvl)
 		Log.LogLevel = lvl
