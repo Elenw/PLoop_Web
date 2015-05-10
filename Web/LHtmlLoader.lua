@@ -35,12 +35,6 @@ local lhtmlLoader = nil
 
 function SetLhtmlLoader(loader) lhtmlLoader = loader end
 
-function parsePrintOld(prev, printCode)
-	if prev ~= "@" then
-		return ([[%s]=] writer:Write(%s) writer:Write[=[]]):format(prev, printCode)
-	end
-end
-
 function parsePrintTemp(word)
 	lhtmlLoader.ParsesPrintTempOk = true
 	tinsert(lhtmlLoader.ParsesPrintTemp, word)
@@ -114,23 +108,17 @@ end
 function parseWebPart(ret, space, name, option)
 	if ret == "@" and space == "" then return end
 	local needSpace = ret == "" or ret == "\n" or ret == "\r"
-	if option == "" then option = nil end
-	if option and option:match("^:") then option = option:sub(2, -1) end
-	local temp = option or ("@{%s}"):format(name)
 
 	return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, space .. %q) else writer:Write(%q) end writer:Write[=[]]):format(
-		ret, space, name, name, needSpace and space or "", temp)
+		ret, space, name, name, needSpace and space or "", option)
 end
 
 function parseEmbedPage(ret, space, name, option)
 	if ret == "@" and space == "" then return end
 	local needSpace = ret == "" or ret == "\n" or ret == "\r"
-	if option == "" then option = nil end
-	if option and option:match("^:") then option = option:sub(2, -1) end
-	local temp = option or ("%s@{%s}"):format(space, name)
 
 	return ([[%s%s]=] __FileLoader__.OutputPhysicalFiles(%q, writer, space .. %q, %q) writer:Write[=[]]):format(
-		ret, space, name, needSpace and space or "", temp)
+		ret, space, name, needSpace and space or "", option)
 end
 
 function parseHtmlHelper(ret, space, name, param)
@@ -312,6 +300,8 @@ class "LHtmlLoader" (function(_ENV)
 			f:close()
 
 			self.Definition = { IPage }
+
+			ct = ct:gsub("\r\n", "\n")
 
 			-- Get line break
 			local lb = ct:match("[\n\r]")
