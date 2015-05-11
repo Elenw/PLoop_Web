@@ -240,12 +240,12 @@ end
 @{htmlhelper(params)}
 @[url]
 --]======================]
-function parsePageLine(line, firstLine)
+function parsePageLine(line)
 	local newline
 
 	Trace("[LHtmlLoader][parsePageLine] << %s", line)
 
-	lhtmlLoader.SpaceHandled = firstLine or false
+	lhtmlLoader.SpaceHandled = false
 
 	-- Parse lua code
 	newline = line:gsub("^%s*@>(.*)$", parseLine)
