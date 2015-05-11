@@ -82,6 +82,7 @@ class "LHtmlLoader" {
 					end
 
 					line = lines()
+					matched = 0
 				end
 
 				-- Generate the Main Html Page
@@ -91,13 +92,20 @@ class "LHtmlLoader" {
 						local codes = self.LuaCode
 						tinsert(codes, [[function Render(self, writer, space) space = space or ""]])
 						for _, line in ipairs(main) do tinsert(codes, line) end
+
+						if #main > 0 then
+							line = tremove(codes)
+							line = line:gsub(([[writer:Write%%(%q%%)$]]):format(WebSettings.LineBreak), "")
+							tinsert(codes, line)
+						end
+
 						tinsert(codes, "end")
 					end
 				end
 
 				local define = tconcat(self.LuaCode, WebSettings.LineBreak)
 				Debug("Generate definition for %s :", name)
-				Debug(define)
+				Debug("%s%s", WebSettings.LineBreak, define)
 
 				-- Recode the target class
 				if Reflector.IsClass(target) then
@@ -232,29 +240,37 @@ end
 @{htmlhelper(params)}
 @[url]
 --]======================]
-function parsePageLine(line)
+function parsePageLine(line, firstLine)
 	local newline
 
-	lhtmlLoader.SpaceHandled = false
+	Trace("[LHtmlLoader][parsePageLine] << %s", line)
+
+	lhtmlLoader.SpaceHandled = firstLine or false
 
 	-- Parse lua code
 	newline = line:gsub("^%s*@>(.*)$", parseLine)
-	if newline ~= line then return newline end
+	if newline ~= line then
+		Trace("[LHtmlLoader][parsePageLine] << %s", newline)
+		return newline
+	end
 	newline = line:gsub("^%s*@%s*(%w+)(.*)$", parseLineWithKeyWord)
-	if newline ~= line then return newline end
+	if newline ~= line then
+		Trace("[LHtmlLoader][parsePageLine] << %s", newline)
+		return newline
+	end
 
 	-- Parse print code
-	line = line:gsub("(.?)@%s*(%b())", parsePrintParen)
-	line = line:gsub("(.?)@%s*([_%w]+.+)", parsePrint)
+	line = line:gsub("(%S?)@%s*(%b())", parsePrintParen)
+	line = line:gsub("(%S?)@%s*([_%w]+.+)", parsePrint)
 
 	-- Parse html helper
-	line = line:gsub("(.?)(%s*)@%s*{%s*([_%w]+)%s*(%b())%s*}", parseHtmlHelper)
+	line = line:gsub("(%S?)(%s*)@%s*{%s*([_%w]+)%s*(%b())%s*}", parseHtmlHelper)
 
 	-- Parse web part
-	line = line:gsub("(.?)(%s*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
+	line = line:gsub("(%S?)(%s*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
 
 	-- Parse embed page
-	line = line:gsub("(.?)(%s*)@%s*%[%s*([^%s:]+)%s*(.-)%s*%]", parseEmbedPage)
+	line = line:gsub("(%S?)(%s*)@%s*%[%s*([^%s:]+)%s*(.-)%s*%]", parseEmbedPage)
 
 	-- Format code
 	line = line:gsub("@@", "@")
@@ -266,6 +282,8 @@ function parsePageLine(line)
 	line = line .. ([[]=] writer:Write(%q)]]):format(WebSettings.LineBreak)
 	line = line:gsub("%s*writer:Write%[=%[%]=%]%s*", " ")
 
+	Trace("[LHtmlLoader][parsePageLine] >> %s", line)
+
 	return line
 end
 
@@ -275,9 +293,10 @@ end
 }
 --]======================]
 function parseLuaCode()
-	local codes = self.LuaCode
+	local codes = lhtmlLoader.LuaCode
 	local prev
-	for line in self.Lines do
+
+	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
 
 		if line == "}" then return end
@@ -293,22 +312,32 @@ end
 }
 --]======================]
 function parseHtmlHelperDefine(name, param)
-	local codes = self.LuaCode
+	local codes = lhtmlLoader.LuaCode
 	local prev
+	local lineCnt = 0
+
 	param = param:sub(2, -2)
 
 	tinsert(codes, ([[function Render_%s(self, writer, space, %s) space = space or ""]]):format(name, param))
 
-	for line in self.Lines do
+	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
 		if not prev then prev = "^" .. (line:match("^%s+") or "") end
 		if prev then line = line:gsub(prev, "") end
 
 		if line == "}" then
+			if lineCnt > 0 then
+				line = tremove(codes)
+
+				line = line:gsub(([[writer:Write%%(%q%%)$]]):format(WebSettings.LineBreak), "")
+
+				tinsert(codes, line)
+			end
 			tinsert(codes, "end")
 			return
 		end
 
+		lineCnt = lineCnt + 1
 		tinsert(codes, parsePageLine(line))
 	end
 	error(("'@%s(%s){' html helper block must have an end '}'."):format(name, param))
@@ -320,21 +349,30 @@ end
 }
 --]======================]
 function parseWebPartDefine(name)
-	local codes = self.LuaCode
+	local codes = lhtmlLoader.LuaCode
 	local prev
+	local lineCnt = 0
 
 	tinsert(codes, ([[function Render_%s(self, writer, space) space = space or ""]]):format(name))
 
-	for line in self.Lines do
+	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
 		if not prev then prev = "^" .. (line:match("^%s+") or "") end
 		if prev then line = line:gsub(prev, "") end
 
 		if line == "}" then
+			if lineCnt > 0 then
+				line = tremove(codes)
+
+				line = line:gsub(([[writer:Write%%(%q%%)$]]):format(WebSettings.LineBreak), "")
+
+				tinsert(codes, line)
+			end
 			tinsert(codes, "end")
 			return
 		end
 
+		lineCnt = lineCnt + 1
 		tinsert(codes, parsePageLine(line))
 	end
 	error(("'@%s{' web part block must have an end '}'."):format(name))
@@ -362,7 +400,6 @@ function parsePrintParen(prev, printCode)
 		return ([[%s]=] writer:Write(tostring%s) writer:Write[=[]]):format(prev, printCode)
 	end
 end
-
 
 --[======================[
 @self.Items:Get(1).Name
@@ -419,7 +456,7 @@ function parseWebPart(ret, space, name, option)
 		return ([[if self.Render_%s then self:Render_%s(writer, space .. %q) else writer:Write(space) writer:Write(%q) end writer:Write[=[]]):format(
 			name, name, space, option)
 	else
-		return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, space) else writer:Write(%q) end writer:Write[=[]]):format(
+		return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, "") else writer:Write(%q) end writer:Write[=[]]):format(
 			ret, space, name, name, option)
 	end
 end
@@ -434,7 +471,7 @@ function parseEmbedPage(ret, space, name, option)
 		return ([[__FileLoader__.OutputPhysicalFiles(%q, writer, space .. %q, %q) writer:Write[=[]]):format(
 			name, space, option)
 	else
-		return ([[%s%s]=] __FileLoader__.OutputPhysicalFiles(%q, writer, space, %q) writer:Write[=[]]):format(
+		return ([[%s%s]=] __FileLoader__.OutputPhysicalFiles(%q, writer, "", %q) writer:Write[=[]]):format(
 			ret, space, name, option)
 	end
 end
@@ -453,7 +490,7 @@ function parseHtmlHelper(ret, space, name, param)
 		return ([[self:Render_%s(writer, space .. %q%s) writer:Write[=[]]):format(
 			name,  space, param and ", " .. param or "")
 	else
-		return ([[%s%s]=] self:Render_%s(writer, space%s) writer:Write[=[]]):format(
+		return ([[%s%s]=] self:Render_%s(writer, ""%s) writer:Write[=[]]):format(
 			ret, space,	name, param and ", " .. param or "")
 	end
 end

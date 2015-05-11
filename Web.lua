@@ -112,6 +112,7 @@ class "__FileLoader__" (function(_ENV)
 			obj:Render(writer, space)
 			obj:Dispose()
 		else
+			writer:Write(space)
 			writer:Write(default)
 		end
 		writer:Flush()
