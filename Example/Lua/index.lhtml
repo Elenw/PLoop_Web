@@ -1,11 +1,12 @@
-@{ inherit="Share/MasterPage", unique = true, cache = true }
+@{ inherit=System.Web.HtmlPage, masterpage="Share/MasterPage", extend="Share/GlobalHelper", unique = true, cache = true }
 
 @title{
 	@self.PageTitle
 }
 
 @jspart{
-	@{javascript("_static/jquery")}
+	<script type="text/javascript">
+	</script>
 }
 
 @body{

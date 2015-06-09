@@ -1,4 +1,4 @@
-@{ namespace = "MyWeb", extend="Share/GlobalHelper" }
+@{ inherit=System.Web.MasterPage, namespace = "MyWeb" }
 
 <html xmlns="http://www.w3.org/1999/xhtml">
 	<head>

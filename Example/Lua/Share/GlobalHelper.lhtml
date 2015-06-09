@@ -28,6 +28,7 @@
 			</tr>
 		</thead>
 		<tbody>
+		@if type(data) == "table" then
 			@for _, v in ipairs(data) do
 			<tr>
 				@for i = 1, #field/2 do if i%2 == 1 then
@@ -37,6 +38,7 @@
 				@end end
 			</tr>
 			@end
+		@end
 		</tbody>
-	<table>
+	</table>
 }

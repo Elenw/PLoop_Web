@@ -6,19 +6,21 @@
 --=============================
 _ENV = Module "System.Web.LHtmlLoader" "1.1.0"
 
-import "System"
+namespace "System.Web"
 
 __FileLoader__"lhtml"
 class "LHtmlLoader" {
+	IFileLoader,
+
 	LoadFile = function (self, path, target)
-		local name = path:match("([_%w]+)%.%w+$")
+		local name = target and Reflector.GetNameSpaceName(target) or path:match("([_%w]+)%.%w+$")
 
 		local f = fopen(path, "r")
 
 		if f then
 			SetLhtmlLoader(self)
 
-			self.Definition = { IPage }
+			self.Definition = { }
 
 			local lines = f:lines()
 
@@ -53,6 +55,16 @@ class "LHtmlLoader" {
 				self.Definition = nil
 				self.Lines = lines
 				self.LuaCode = {}
+				self.TargetName = name
+
+				-- Generate MasterPage property
+				if self.MasterPage then
+					tinsert(self.LuaCode, [[System.__Static__() property "MasterPage" { Type = -System.Web.MasterPage } ]])
+				end
+
+				if Reflector.IsSuperClass(target, MasterPage) then
+					self.IsMasterPage = true
+				end
 
 				local main = {}
 
@@ -85,33 +97,79 @@ class "LHtmlLoader" {
 					matched = 0
 				end
 
+				-- Generate EmbedPages property
+				if self.EmbedPages and next(self.EmbedPages) then
+					tinsert(self.LuaCode, [[System.__Static__() property "EmbedPages" { Type = System.Table } ]])
+				end
+
 				-- Generate the Main Html Page
 				if Reflector.IsClass(target) then
-					local superCls = Reflector.GetSuperClass(target)
-					if not (superCls and Reflector.IsExtendedInterface(superCls, IPage)) then
-						local codes = self.LuaCode
-						tinsert(codes, [[function Render(self, writer, space) space = space or ""]])
-						for _, line in ipairs(main) do tinsert(codes, line) end
+					if Reflector.IsSuperClass(target, MasterPage) then
+						if Reflector.GetSuperClass(target) == MasterPage then
+							-- Only the root MasterPage has Render method
+							local codes = self.LuaCode
+							tinsert(codes, [[function Render(self, writer, indent) indent = indent or ""]])
+							for _, line in ipairs(main) do tinsert(codes, line) end
 
-						if #main > 0 then
-							line = tremove(codes)
-							line = line:gsub(([[writer:Write%%(%q%%)$]]):format(WebSettings.LineBreak), "")
-							tinsert(codes, line)
+							if #main > 0 then
+								line = tremove(codes)
+								if Web.UseWriterObject then
+									line = line:gsub(([[writer:Write%%(%q%%)$]]):format(Web.LineBreak), "")
+								else
+									line = line:gsub(([[writer%%(%q%%)$]]):format(Web.LineBreak), "")
+								end
+								tinsert(codes, line)
+							end
+
+							tinsert(codes, "end")
+						end
+					else
+						local codes = self.LuaCode
+						tinsert(codes, [[function Render(self, writer, indent) indent = indent or ""]])
+
+						tinsert(codes, [[Super.Render(self, writer, indent)]])
+
+						if self.MasterPage then
+							tinsert(codes, ([[local masterPage = %s.MasterPage()]]):format(self.TargetName))
+							tinsert(codes, [[masterPage.HtmlPage = self]])
+							tinsert(codes, [[masterPage:Output(indent)]])
+						else
+							for _, line in ipairs(main) do tinsert(codes, line) end
+
+							if #main > 0 then
+								line = tremove(codes)
+								if Web.UseWriterObject then
+									line = line:gsub(([[writer:Write%%(%q%%)$]]):format(Web.LineBreak), "")
+								else
+									line = line:gsub(([[writer%%(%q%%)$]]):format(Web.LineBreak), "")
+								end
+								tinsert(codes, line)
+							end
 						end
 
 						tinsert(codes, "end")
 					end
 				end
 
-				local define = tconcat(self.LuaCode, WebSettings.LineBreak)
+				local define = tconcat(self.LuaCode, Web.LineBreak)
 				Debug("Generate definition for %s :", name)
-				Debug("%s%s", WebSettings.LineBreak, define)
+				Debug("%s%s", Web.LineBreak, define)
 
 				-- Recode the target class
 				if Reflector.IsClass(target) then
 					class (target) ( define )
 				else
 					interface (target) ( define )
+				end
+
+				-- Set EmbedPages
+				if self.EmbedPages and next(self.EmbedPages) then
+					target.EmbedPages = self.EmbedPages
+				end
+
+				-- Set MasterPage
+				if self.MasterPage then
+					target.MasterPage = self.MasterPage
 				end
 			end
 
@@ -172,22 +230,22 @@ function parsePageHeader(header)
 			if k == "namespace" then
 				lhtmlLoader.NameSpace = v
 			elseif k == "inherit" then
-				assert(not lhtmlLoader.Abstract, ("%s - the page is an abstract page, can't inherit other pages."):format(header))
+				assert(not lhtmlLoader.Abstract, ("%s - the page is an abstract page, can't use inherit."):format(header))
 
 				if Reflector.IsClass(v) then
 					tinsert(lhtmlLoader.Definition, v)
 				elseif type(v) == "string" then
-					local cls = Reflector.GetNameSpaceForName(v)
+					local cls = not v:match(Web.DirSeperator) and Reflector.GetNameSpaceForName(v)
 					if Reflector.IsClass(cls) then
 						tinsert(lhtmlLoader.Definition, cls)
 					else
 						local loader = lhtmlLoader
-						local cls = __FileLoader__.LoadPhysicalFiles(v)
+						local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, v))
 						lhtmlLoader = loader
 						if Reflector.IsClass(cls) then
 							tinsert(lhtmlLoader.Definition, cls)
 						else
-							error(("%s - the master page can't be found."):format(header))
+							error(("%s - the super page file can't be found."):format(header))
 						end
 					end
 				else
@@ -196,12 +254,12 @@ function parsePageHeader(header)
 			elseif k == "extend" then
 				if type(v) == "string" then
 					for p in v:gmatch("[^%s,]+") do
-						local itf = Reflector.GetNameSpaceForName(p)
+						local itf = not p:match(Web.DirSeperator) and Reflector.GetNameSpaceForName(p)
 						if Reflector.IsInterface(itf) then
 							tinsert(lhtmlLoader.Definition, itf)
 						else
 							local loader = lhtmlLoader
-							itf = __FileLoader__.LoadPhysicalFiles(v)
+							itf = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, p))
 							lhtmlLoader = loader
 							if Reflector.IsInterface(itf) then
 								tinsert(lhtmlLoader.Definition, itf)
@@ -226,6 +284,38 @@ function parsePageHeader(header)
 				lhtmlLoader.UniqueClass = true
 			elseif k == "cache" and v then
 				lhtmlLoader.CacheClass = true
+			elseif k == "masterpage" and v then
+				if Reflector.IsClass(v) then
+					if Reflector.IsSuperClass(v, MasterPage) then
+						lhtmlLoader.MasterPage = v
+					else
+						error(("%s - masterpage's value must be a System.Web.MasterPage class."):format(header))
+					end
+				elseif type(v) == "string" then
+					local cls = not v:match(Web.DirSeperator) and Reflector.GetNameSpaceForName(v)
+					if Reflector.IsClass(cls) then
+						if Reflector.IsSuperClass(cls, MasterPage) then
+							lhtmlLoader.MasterPage = cls
+						else
+							error(("%s - masterpage's value must be a System.Web.MasterPage class."):format(header))
+						end
+					else
+						local loader = lhtmlLoader
+						local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, v))
+						lhtmlLoader = loader
+						if Reflector.IsClass(cls) then
+							if Reflector.IsSuperClass(cls, MasterPage) then
+								lhtmlLoader.MasterPage = cls
+							else
+								error(("%s - masterpage's value must be a System.Web.MasterPage class."):format(header))
+							end
+						else
+							error(("%s - the master page can't be found."):format(header))
+						end
+					end
+				else
+					error(("%s - masterpage format error."):format(header))
+				end
 			end
 		end
 	end
@@ -270,17 +360,26 @@ function parsePageLine(line)
 	line = line:gsub("(%S?)(%s*)@%s*{%s*([_%w]+)%s*(.-)%s*}", parseWebPart)
 
 	-- Parse embed page
-	line = line:gsub("(%S?)(%s*)@%s*%[%s*([^%s:]+)%s*(.-)%s*%]", parseEmbedPage)
+	line = line:gsub("(%S?)(%s*)@%s*(%b[])", parseEmbedPage)
 
 	-- Format code
 	line = line:gsub("@@", "@")
 
 	if not lhtmlLoader.SpaceHandled then
-		line = [[writer:Write(space) writer:Write[=[]] .. line
+		if Web.UseWriterObject then
+			line = [[writer:Write(indent) writer:Write[=[]] .. line
+		else
+			line = [[writer(indent) writer[=[]] .. line
+		end
 	end
 
-	line = line .. ([[]=] writer:Write(%q)]]):format(WebSettings.LineBreak)
-	line = line:gsub("%s*writer:Write%[=%[%]=%]%s*", " ")
+	if Web.UseWriterObject then
+		line = line .. ([[]=] writer:Write(%q)]]):format(Web.LineBreak)
+		line = line:gsub("%s*writer:Write%[=%[%]=%]%s*", " ")
+	else
+		line = line .. ([[]=] writer(%q)]]):format(Web.LineBreak)
+		line = line:gsub("%s*writer%[=%[%]=%]%s*", " ")
+	end
 
 	Trace("[LHtmlLoader][parsePageLine] >> %s", line)
 
@@ -318,7 +417,7 @@ function parseHtmlHelperDefine(name, param)
 
 	param = param:sub(2, -2)
 
-	tinsert(codes, ([[function Render_%s(self, writer, space, %s) space = space or ""]]):format(name, param))
+	tinsert(codes, ([[function Render_%s(self, writer, indent, %s) indent = indent or ""]]):format(name, param))
 
 	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
@@ -329,7 +428,11 @@ function parseHtmlHelperDefine(name, param)
 			if lineCnt > 0 then
 				line = tremove(codes)
 
-				line = line:gsub(([[writer:Write%%(%q%%)$]]):format(WebSettings.LineBreak), "")
+				if Web.UseWriterObject then
+					line = line:gsub(([[writer:Write%%(%q%%)$]]):format(Web.LineBreak), "")
+				else
+					line = line:gsub(([[writer%%(%q%%)$]]):format(Web.LineBreak), "")
+				end
 
 				tinsert(codes, line)
 			end
@@ -353,7 +456,7 @@ function parseWebPartDefine(name)
 	local prev
 	local lineCnt = 0
 
-	tinsert(codes, ([[function Render_%s(self, writer, space) space = space or ""]]):format(name))
+	tinsert(codes, ([[function Render_%s(self, writer, indent) indent = indent or ""]]):format(name))
 
 	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
@@ -364,7 +467,11 @@ function parseWebPartDefine(name)
 			if lineCnt > 0 then
 				line = tremove(codes)
 
-				line = line:gsub(([[writer:Write%%(%q%%)$]]):format(WebSettings.LineBreak), "")
+				if Web.UseWriterObject then
+					line = line:gsub(([[writer:Write%%(%q%%)$]]):format(Web.LineBreak), "")
+				else
+					line = line:gsub(([[writer%%(%q%%)$]]):format(Web.LineBreak), "")
+				end
 
 				tinsert(codes, line)
 			end
@@ -397,7 +504,11 @@ end
 --]======================]
 function parsePrintParen(prev, printCode)
 	if prev ~= "@" then
-		return ([[%s]=] writer:Write(tostring%s) writer:Write[=[]]):format(prev, printCode)
+		if Web.UseWriterObject then
+			return ([[%s]=] writer:Write(tostring%s) writer:Write[=[]]):format(prev, printCode)
+		else
+			return ([[%s]=] writer(tostring%s) writer[=[]]):format(prev, printCode)
+		end
 	end
 end
 
@@ -442,55 +553,138 @@ function parsePrint(prev, printCode)
 
 		lhtmlLoader.ParsesPrintTemp = nil
 
-		return ([[%s]=] writer:Write(%s) writer:Write[=[%s]]):format(prev, code, printCode)
+		if Web.UseWriterObject then
+			return ([[%s]=] writer:Write(%s) writer:Write[=[%s]]):format(prev, code, printCode)
+		else
+			return ([[%s]=] writer(%s) writer[=[%s]]):format(prev, code, printCode)
+		end
 	end
 end
 
 --[======================[
 @{body this should be a body part}
 --]======================]
-function parseWebPart(ret, space, name, option)
-	if ret == "@" and space == "" then return end
+function parseWebPart(ret, indent, name, option)
+	if ret == "@" and indent == "" then return end
 	if  ret == "" then
 		lhtmlLoader.SpaceHandled = true
-		return ([[if self.Render_%s then self:Render_%s(writer, space .. %q) else writer:Write(space) writer:Write(%q) end writer:Write[=[]]):format(
-			name, name, space, option)
+
+		if lhtmlLoader.IsMasterPage then
+			if Web.UseWriterObject then
+				return ([[self:RenderWebPart(%q, writer, indent .. %q, %q) writer:Write[=[]]):format(name, indent, option)
+			else
+				return ([[self:RenderWebPart(%q, writer, indent .. %q, %q) writer[=[]]):format(name, indent, option)
+			end
+		else
+			if Web.UseWriterObject then
+				return ([[if self.Render_%s then self:Render_%s(writer, indent .. %q) else writer:Write(indent) writer:Write(%q) end writer:Write[=[]]):format(
+					name, name, indent, option)
+			else
+				return ([[if self.Render_%s then self:Render_%s(writer, indent .. %q) else writer(indent) writer(%q) end writer[=[]]):format(
+					name, name, indent, option)
+			end
+		end
 	else
-		return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, "") else writer:Write(%q) end writer:Write[=[]]):format(
-			ret, space, name, name, option)
+		if lhtmlLoader.IsMasterPage then
+			if Web.UseWriterObject then
+				return ([[%s%s]=] self:RenderWebPart(%q, writer, "", %q) writer:Write[=[]]):format(ret, indent, name, option)
+			else
+				return ([[%s%s]=] self:RenderWebPart(%q, writer, "", %q) writer[=[]]):format(ret, indent, name, option)
+			end
+		else
+			if Web.UseWriterObject then
+				return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, "") else writer:Write(%q) end writer:Write[=[]]):format(
+					ret, indent, name, name, option)
+			else
+				return ([[%s%s]=] if self.Render_%s then self:Render_%s(writer, "") else writer(%q) end writer[=[]]):format(
+					ret, indent, name, name, option)
+			end
+		end
 	end
 end
 
 --[======================[
 @[url get web part from other pages]
+@[share/login(self.Data) default messages]
+@[share/login default messages]
 --]======================]
-function parseEmbedPage(ret, space, name, option)
-	if ret == "@" and space == "" then return end
+function parseEmbedPage(ret, indent, content)
+	if ret == "@" and indent == "" then return end
+
+	content = content:sub(2, -2)
+
+	local url, param, default = content:match("^%s*([^%s(]*)%s*(%b())%s*(.-)%s*$")
+	if not url or url == "" then
+		url, default = content:match("^%s*(%S*)%s*(.-)%s*$")
+		param = "nil"
+	else
+		param = param:sub(2, -2):gsub("^%s*(.-)%s*$", "%1")
+		if param == "" then param = "nil" end
+	end
+
+	local loader = lhtmlLoader
+	local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, url))
+	lhtmlLoader = loader
+	if Reflector.IsClass(cls) then
+		loader.EmbedPages = loader.EmbedPages or {}
+		loader.EmbedPages[url] = cls
+	else
+		if Web.UseWriterObject then
+			return ([[%s%s]=] writer:Write(%q) writer:Write[=[]]):format(
+				ret, indent, default)
+		else
+			return ([[%s%s]=] writer(%q) writer[=[]]):format(
+				ret, indent, default)
+		end
+	end
+
 	if ret == "" then
 		lhtmlLoader.SpaceHandled = true
-		return ([[__FileLoader__.OutputPhysicalFiles(%q, writer, space .. %q, %q) writer:Write[=[]]):format(
-			name, space, option)
+
+		if Web.UseWriterObject then
+			return ([[self:OutputWithOther(%s.EmbedPages[%q](%s), indent .. %q) writer:Write[=[]]):format(
+				lhtmlLoader.TargetName, url, param, indent)
+		else
+			return ([[self:OutputWithOther(%s.EmbedPages[%q](%s), indent .. %q) writer[=[]]):format(
+				lhtmlLoader.TargetName, url, param, indent)
+		end
 	else
-		return ([[%s%s]=] __FileLoader__.OutputPhysicalFiles(%q, writer, "", %q) writer:Write[=[]]):format(
-			ret, space, name, option)
+		if Web.UseWriterObject then
+			return ([[%s%s]=] self:OutputWithOther(%s.EmbedPages[%q](%s), "") writer:Write[=[]]):format(
+				ret, indent, lhtmlLoader.TargetName, url, param)
+		else
+			return ([[%s%s]=] self:OutputWithOther(%s.EmbedPages[%q](%s), "") writer[=[]]):format(
+				ret, indent, lhtmlLoader.TargetName, url, param)
+		end
 	end
 end
 
 --[======================[
 @{HtmlTable(self.Data)}
 --]======================]
-function parseHtmlHelper(ret, space, name, param)
-	if ret == "@" and space == "" then return end
+function parseHtmlHelper(ret, indent, name, param)
+	if ret == "@" and indent == "" then return end
 	param = param:sub(2, -2):gsub("^%s+", ""):gsub("%s+$", "")
 
 	if param == "" then param = nil end
 
 	if ret == "" then
 		lhtmlLoader.SpaceHandled = true
-		return ([[self:Render_%s(writer, space .. %q%s) writer:Write[=[]]):format(
-			name,  space, param and ", " .. param or "")
+
+		if Web.UseWriterObject then
+			return ([[self:Render_%s(writer, indent .. %q%s) writer:Write[=[]]):format(
+				name, indent, param and ", " .. param or "")
+		else
+			return ([[self:Render_%s(writer, indent .. %q%s) writer[=[]]):format(
+				name, indent, param and ", " .. param or "")
+		end
 	else
-		return ([[%s%s]=] self:Render_%s(writer, ""%s) writer:Write[=[]]):format(
-			ret, space,	name, param and ", " .. param or "")
+		if Web.UseWriterObject then
+			return ([[%s%s]=] self:Render_%s(writer, ""%s) writer:Write[=[]]):format(
+				ret, indent, name, param and ", " .. param or "")
+		else
+			return ([[%s%s]=] self:Render_%s(writer, ""%s) writer[=[]]):format(
+				ret, indent, name, param and ", " .. param or "")
+		end
 	end
 end

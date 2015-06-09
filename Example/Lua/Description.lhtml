@@ -1,4 +1,4 @@
-@{ unique = true, cache = true }
+@{ inherit=System.Web.HtmlPage, unique = true, cache = true }
 
 <h2>
 	Here is a description for index page<br/>
