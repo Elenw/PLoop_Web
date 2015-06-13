@@ -1,18 +1,19 @@
 --=============================
--- LHtmlLoader
+-- LuaPageLoader
 --
 -- Author : Kurapica
 -- Create Date : 2015/05/10
 --=============================
-_ENV = Module "System.Web.LHtmlLoader" "1.1.0"
+_ENV = Module "System.Web.LuaPageLoader" "1.1.0"
 
 namespace "System.Web"
 
-__FileLoader__"lhtml"
-class "LHtmlLoader" {
+__FileLoader__"luap"
+class "LuaPageLoader" {
 	IFileLoader,
 
 	LoadFile = function (self, path, target)
+		local discardIndent = Web.DiscardIndent
 		local name = target and Reflector.GetNameSpaceName(target) or path:match("([_%w]+)%.%w+$")
 
 		local f = fopen(path, "r")
@@ -72,6 +73,10 @@ class "LHtmlLoader" {
 					line = line:gsub("%s+$", "")
 
 					if line ~= "" then
+						if discardIndent then
+							line = line:gsub("^%s+", "")
+						end
+
 						-- parse global lua code
 						if matched == 0 then
 							line, matched = line:gsub("^@%s*{$", parseLuaCode)
@@ -152,6 +157,15 @@ class "LHtmlLoader" {
 				end
 
 				local define = tconcat(self.LuaCode, Web.LineBreak)
+
+				if discardIndent then
+					if Web.UseWriterObject then
+						define = define:gsub("writer:Write%(indent%)", "")
+					else
+						define = define:gsub("writer%(indent%)", "")
+					end
+				end
+
 				Debug("Generate definition for %s :", name)
 				Debug("%s%s", Web.LineBreak, define)
 
@@ -240,7 +254,7 @@ function parsePageHeader(header)
 						tinsert(lhtmlLoader.Definition, cls)
 					else
 						local loader = lhtmlLoader
-						local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, v))
+						local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathHelper.GetPathFromRelativePath(loader.Path, v))
 						lhtmlLoader = loader
 						if Reflector.IsClass(cls) then
 							tinsert(lhtmlLoader.Definition, cls)
@@ -259,7 +273,7 @@ function parsePageHeader(header)
 							tinsert(lhtmlLoader.Definition, itf)
 						else
 							local loader = lhtmlLoader
-							itf = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, p))
+							itf = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathHelper.GetPathFromRelativePath(loader.Path, p))
 							lhtmlLoader = loader
 							if Reflector.IsInterface(itf) then
 								tinsert(lhtmlLoader.Definition, itf)
@@ -301,7 +315,7 @@ function parsePageHeader(header)
 						end
 					else
 						local loader = lhtmlLoader
-						local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, v))
+						local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathHelper.GetPathFromRelativePath(loader.Path, v))
 						lhtmlLoader = loader
 						if Reflector.IsClass(cls) then
 							if Reflector.IsSuperClass(cls, MasterPage) then
@@ -333,19 +347,19 @@ end
 function parsePageLine(line)
 	local newline
 
-	Trace("[LHtmlLoader][parsePageLine] << %s", line)
+	Trace("[LuaPageLoader][parsePageLine] << %s", line)
 
 	lhtmlLoader.SpaceHandled = false
 
 	-- Parse lua code
 	newline = line:gsub("^%s*@>(.*)$", parseLine)
 	if newline ~= line then
-		Trace("[LHtmlLoader][parsePageLine] << %s", newline)
+		Trace("[LuaPageLoader][parsePageLine] << %s", newline)
 		return newline
 	end
 	newline = line:gsub("^%s*@%s*(%w+)(.*)$", parseLineWithKeyWord)
 	if newline ~= line then
-		Trace("[LHtmlLoader][parsePageLine] << %s", newline)
+		Trace("[LuaPageLoader][parsePageLine] << %s", newline)
 		return newline
 	end
 
@@ -374,14 +388,22 @@ function parsePageLine(line)
 	end
 
 	if Web.UseWriterObject then
-		line = line .. ([[]=] writer:Write(%q)]]):format(Web.LineBreak)
+		if Web.DiscardLineBreak then
+			line = line .. ([[]=] ]])
+		else
+			line = line .. ([[]=] writer:Write(%q)]]):format(Web.LineBreak)
+		end
 		line = line:gsub("%s*writer:Write%[=%[%]=%]%s*", " ")
 	else
-		line = line .. ([[]=] writer(%q)]]):format(Web.LineBreak)
+		if Web.DiscardLineBreak then
+			line = line .. ([[]=] ]])
+		else
+			line = line .. ([[]=] writer(%q)]]):format(Web.LineBreak)
+		end
 		line = line:gsub("%s*writer%[=%[%]=%]%s*", " ")
 	end
 
-	Trace("[LHtmlLoader][parsePageLine] >> %s", line)
+	Trace("[LuaPageLoader][parsePageLine] >> %s", line)
 
 	return line
 end
@@ -414,6 +436,7 @@ function parseHtmlHelperDefine(name, param)
 	local codes = lhtmlLoader.LuaCode
 	local prev
 	local lineCnt = 0
+	local discardIndent = Web.DiscardIndent
 
 	param = param:sub(2, -2)
 
@@ -422,7 +445,6 @@ function parseHtmlHelperDefine(name, param)
 	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
 		if not prev then prev = "^" .. (line:match("^%s+") or "") end
-		if prev then line = line:gsub(prev, "") end
 
 		if line == "}" then
 			if lineCnt > 0 then
@@ -440,6 +462,12 @@ function parseHtmlHelperDefine(name, param)
 			return
 		end
 
+		if discardIndent then
+			line = line:gsub("^%s+", "")
+		elseif prev then
+			line = line:gsub(prev, "")
+		end
+
 		lineCnt = lineCnt + 1
 		tinsert(codes, parsePageLine(line))
 	end
@@ -455,13 +483,13 @@ function parseWebPartDefine(name)
 	local codes = lhtmlLoader.LuaCode
 	local prev
 	local lineCnt = 0
+	local discardIndent = Web.DiscardIndent
 
 	tinsert(codes, ([[function Render_%s(self, writer, indent) indent = indent or ""]]):format(name))
 
 	for line in lhtmlLoader.Lines do
 		line = line:gsub("%s+$", "")
 		if not prev then prev = "^" .. (line:match("^%s+") or "") end
-		if prev then line = line:gsub(prev, "") end
 
 		if line == "}" then
 			if lineCnt > 0 then
@@ -477,6 +505,12 @@ function parseWebPartDefine(name)
 			end
 			tinsert(codes, "end")
 			return
+		end
+
+		if discardIndent then
+			line = line:gsub("^%s+", "")
+		elseif prev then
+			line = line:gsub(prev, "")
 		end
 
 		lineCnt = lineCnt + 1
@@ -623,7 +657,7 @@ function parseEmbedPage(ret, indent, content)
 	end
 
 	local loader = lhtmlLoader
-	local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathMap.GetPathFromRelativePath(loader.Path, url))
+	local cls = __FileLoader__.LoadHandlerFromUrl(loader.Root, PathHelper.GetPathFromRelativePath(loader.Path, url))
 	lhtmlLoader = loader
 	if Reflector.IsClass(cls) then
 		loader.EmbedPages = loader.EmbedPages or {}

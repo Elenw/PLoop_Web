@@ -20,15 +20,18 @@ __AttributeUsage__{AttributeTarget = AttributeTargets.Class, Inherited = false, 
 class "__FileLoader__" (function(_ENV)
 	inherit "__Attribute__"
 
-	import "System.Web.PathMap"
+	import "System.Web.PathHelper"
 
 	_LuaLoader = nil
 	_SuffixFileMap = {}
-	_LoadedPathMap = {}
+	_LoadedPath = {}
 
 	__Static__() function LoadHandlerFromUrl(root, path)
+		-- Remove the suffix
+		path = path:gsub("%.%w*$", "")
+
 		local phyPath = CombineRootPath(root, path)
-		local target = _LoadedPathMap[phyPath]
+		local target = _LoadedPath[phyPath]
 
 		if target == nil then
 			-- Lua Loader
@@ -49,7 +52,7 @@ class "__FileLoader__" (function(_ENV)
 			end
 
 			if not Web.DebugMode then
-				_LoadedPathMap[phyPath] = target
+				_LoadedPath[phyPath] = target
 			end
 		end
 

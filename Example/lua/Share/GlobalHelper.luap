@@ -1,12 +1,8 @@
 @{ namespace = "MyWeb", abstract = true }
 
 @{
-	local function appendSuffix(path, suffix)
-		if not path:match("%.%w+$") then
-			return path .. suffix
-		else
-			return path
-		end
+	local function appendVerSfx(path, version, suffix)
+		return path .. suffix .. (version and "?v=" .. tostring(version) or "")
 	end
 }
 
@@ -14,8 +10,8 @@
 	@(a + b)
 }
 
-@javascript(src) {
-	<script type="text/javascript" src="@appendSuffix(src, '.js')"></script>
+@javascript(name, version) {
+	<script type="text/javascript" src="/js/@appendVerSfx(name, version, '.js')"></script>
 }
 
 @table(data, field) {

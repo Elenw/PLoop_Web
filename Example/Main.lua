@@ -7,6 +7,9 @@ fopen = io.open
 tinsert = table.insert
 tconcat = table.concat
 
+Web.DiscardIndent = false
+Web.DiscardLineBreak = false
+
 Web.SetLogLevel(Web.LogLevel.Debug)
 Web.AddLogHandler(print)
 

@@ -14,8 +14,16 @@ Web.AddLogHandler(function (text)
 	ngx.log(ngx.ERR, text)
 end)
 
-function ngxLua_ProcessRequest()
-	Web.ProcessRequest(NgxLua_HttpRequest(), NgxLua_HttpResponse())
+function ngxLua_ProcessRequest(urlConvertor)
+	Web.ProcessRequest(NgxLua_HttpRequest(), NgxLua_HttpResponse(), urlConvertor)
+end
+
+function mvcUrlConvertor(url)
+	local controller, action, id = url:match("^/(%w+)/(%w+)/(%d+)$")
+
+	if controller and action and id then
+		return ("/controller/%sController"):format(controller), { Action = action, Id = id }
+	end
 end
 
 --=============================
@@ -80,4 +88,7 @@ class "NgxLua_HttpResponse" (function (_ENV)
 	property "ContentType" { Type = String }
 
 	property "Writer" { Set = false , Default = function () return ngx.print end }
+
+	__Handler__(function (self, value) ngx.status = value end)
+	property "StatusCode" { Type = HTTP_STATUS }
 end)

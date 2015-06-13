@@ -15,4 +15,7 @@ class "HttpResponse" (function (_ENV)
 
 	__Doc__ "Gets or sets the response writer."
 	property "Writer" { Type = IWriter + Function }
+
+	__Doc__ "Gets or sets the HTTP status code of the output returned to the client."
+	property "StatusCode" { Type = Integer, Default = System.Any }
 end)

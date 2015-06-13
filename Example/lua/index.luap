@@ -5,8 +5,8 @@
 }
 
 @jspart{
-	<script type="text/javascript">
-	</script>
+	@{ javascript("jquery-2.1.4.min") }
+	@{ javascript("index", 3) }
 }
 
 @body{
